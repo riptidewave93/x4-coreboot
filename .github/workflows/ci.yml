@@ -1,24 +1,36 @@
-# Lint and build with the same make targets as local development: on pull requests and
-# on main. On main, Release-Please keeps a release PR open. Merging it tags a draft
-# release; this workflow builds that commit with the release version, attaches the
-# production build and publishes the release. Release runs skip the debug build.
+# Lint and build with the same make targets as local development, on pull requests and
+# on main. Debug builds are opt-in: the debug-build label on a pull request, or a manual
+# run with the debug build type. On main, Release-Please keeps a release PR open. Merging
+# it tags a draft release; this workflow builds the tagged commit with the release
+# version, attaches the production build and publishes the release.
 name: CI
 
 on:
   pull_request:
+    # closed cancels the build of a merged or closed pull request
+    types: [opened, synchronize, reopened, closed, labeled]
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      build:
+        description: Build type
+        type: choice
+        options: [production, debug]
+        default: production
 
 permissions:
   contents: read
 
+# A pull request's newest event cancels its running build. Runs on main are never
+# cancelled. Labels other than debug-build get their own group, so they cancel nothing.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.ref }}${{ github.event.action == 'labeled' && github.event.label.name != 'debug-build' && format('-{0}', github.run_id) || '' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   lint:
+    if: github.event.action != 'closed' && (github.event.action != 'labeled' || github.event.label.name == 'debug-build')
     runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v7
@@ -34,6 +46,7 @@ jobs:
       created: ${{ steps.rp.outputs.release_created }}
       tag: ${{ steps.rp.outputs.tag_name }}
       version: ${{ steps.rp.outputs.version }}
+      sha: ${{ steps.rp.outputs.sha }}
     steps:
       - uses: googleapis/release-please-action@v5
         id: rp
@@ -43,16 +56,24 @@ jobs:
 
   build:
     needs: release-please
-    # Also runs when release-please is skipped (pull requests)
-    if: ${{ !cancelled() && needs.release-please.result != 'failure' }}
+    # Also runs when release-please is skipped (pull requests, manual runs)
+    if: >-
+      !cancelled() && needs.release-please.result != 'failure' &&
+      github.event.action != 'closed' &&
+      (github.event.action != 'labeled' || github.event.label.name == 'debug-build')
     runs-on: ubuntu-26.04
     # The first run builds the toolchain; later runs restore it from the cache
     timeout-minutes: 240
     env:
       # Empty except for a release: then the coreboot version carries it
       RELEASE: ${{ needs.release-please.outputs.created && needs.release-please.outputs.version || '' }}
+      PRODUCTION: ${{ github.event_name != 'workflow_dispatch' || inputs.build != 'debug' }}
+      DEBUG: ${{ (github.event_name == 'workflow_dispatch' && inputs.build == 'debug') || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'debug-build')) }}
     steps:
+      # A release builds the commit Release-Please tagged, even if main has moved on
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.release-please.outputs.created && needs.release-please.outputs.sha || '' }}
 
       - name: Read the coreboot version
         id: pins
@@ -72,10 +93,11 @@ jobs:
           key: dl-${{ hashFiles('Makefile') }}
 
       - name: Build production
+        if: env.PRODUCTION == 'true'
         run: make RELEASE="$RELEASE"
 
       - name: Build debug
-        if: env.RELEASE == ''
+        if: env.DEBUG == 'true'
         run: make DEBUG=1
 
       # Needs the build tree and a built image
@@ -92,13 +114,14 @@ jobs:
           done
 
       - uses: actions/upload-artifact@v7
+        if: env.PRODUCTION == 'true'
         with:
           name: radxa-x4
           path: output/radxa-x4/
           retention-days: 7
 
       - uses: actions/upload-artifact@v7
-        if: env.RELEASE == ''
+        if: env.DEBUG == 'true'
         with:
           name: radxa-x4-debug
           path: output/radxa-x4-debug/
