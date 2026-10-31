@@ -95,12 +95,14 @@ jobs:
         with:
           name: radxa-x4
           path: output/radxa-x4/
+          retention-days: 7
 
       - uses: actions/upload-artifact@v7
         if: env.RELEASE == ''
         with:
           name: radxa-x4-debug
           path: output/radxa-x4-debug/
+          retention-days: 7
 
   publish:
     needs: [lint, release-please, build]
