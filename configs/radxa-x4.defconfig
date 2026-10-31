@@ -1,0 +1,14 @@
+CONFIG_VENDOR_RADXA=y
+CONFIG_BOARD_RADXA_X4=y
+CONFIG_PAYLOAD_EDK2=y
+CONFIG_EDK2_SD_MMC_TIMEOUT=1000
+CONFIG_EDK2_BOOT_TIMEOUT=3
+CONFIG_EDK2_FOLLOW_BGRT_SPEC=y
+# TME off, as in stock
+# CONFIG_INTEL_TME is not set
+# No serial console: the log stays in CBMEM (cbmem -c). make DEBUG=1 adds it back
+# CONFIG_CONSOLE_SERIAL is not set
+CONFIG_DEFAULT_CONSOLE_LOGLEVEL_5=y
+# Network boot: edk2 PXE and HTTP over IPv4 and IPv6 (no TLS), iPXE's Intel driver as SNP.
+# Authenticated variables (dbx) up to 64 KB: room for dbx updates beyond the 32 KB SMMSTORE default
+CONFIG_EDK2_CUSTOM_BUILD_PARAMS="-D NETWORK_DRIVER_ENABLE=TRUE -D NETWORK_ENABLE=TRUE -D NETWORK_IP6_ENABLE=TRUE -D NETWORK_HTTP_BOOT_ENABLE=TRUE -D NETWORK_UNDI_DRIVER=TRUE --pcd gEfiMdeModulePkgTokenSpaceGuid.PcdMaxAuthVariableSize=0x10000"

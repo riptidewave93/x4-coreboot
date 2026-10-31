@@ -1,0 +1,7 @@
+# Added by make DEBUG=1: SPEW console log level
+CONFIG_DEFAULT_CONSOLE_LOGLEVEL_8=y
+# Console on UART0 (TP1 RX, TP2 TX, 3.3 V, 115200 8N1), also used by edk2
+CONFIG_CONSOLE_SERIAL=y
+CONFIG_EDK2_SERIAL_SUPPORT=y
+# Reflash coreboot over UART0 from the bootblock (scripts/x4_uart_flash.py)
+CONFIG_RADXA_X4_UART_FLASH=y

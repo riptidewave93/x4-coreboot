@@ -1,0 +1,958 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Alicja Michalska <alicja.michalska@9elements.com>
+Date: Sat, 8 Feb 2025 01:02:59 +0100
+Subject: [PATCH 01/15] [WIP][NOTFORMERGE] src/mb/radxa: Add support for X4
+
+Currently NOT booting, hard to figure out the pin mapping for LPDDR5.
+
+Used parts, according to the vendor:
+------------------------------------------------
+D4    LPDDR5    H58G56BK8Q    4GB
+D8    LPDDR5    H58G66BK8QX067N    8GB
+D12    LPDDR5    H58GG8AK8BX103    12GB
+D16    LPDDR5    MT62F4G32D8DV-026 WT:B    16GB
+------------------------------------------------
+
+Stock firmware, schematics available at:
+https://dl.radxa.com/x/x4/
+
+Unfortunately, I killed the board I received from vendor with ESD
+discharge so I'm not sure when I'll be able to continue development.
+Wanted to buy another board, but they're sold-out everywhere :(
+
+Last message board produced (before I killed it...):
+-----------------------------------------------------------------------
+[DEBUG]  SPD index = 0
+[SPEW ]  CBFS DEBUG: _cbfs_alloc(name='spd.bin',
+alloc=0x00000000(0x00000000), force_ro=false, type=171)
+[INFO ]  CBFS: Found 'spd.bin' @0x55540 size 0x200 in mcache @0xfef8c3b8
+[INFO ]  SPD: module type is LPDDR5
+[INFO ]  SPD: module part number is
+[INFO ]  SPD: banks 8, ranks 1, rows 16, columns 11, density 16384 Mb
+[INFO ]  SPD: device width 16 bits, bus width 16 bits
+[INFO ]  SPD: module size is 2048 MB (per channel)
+[EMERG]  FspMemoryInit error, status=0x80000007
+-----------------------------------------------------------------------
+
+Intel LPSS UART0 available on TP1/TP2 (testpoints). Need to be soldered
+under the microscope. See the following picture for visual reference:
+https://f.sakamoto.pl/elly/coreboot/radxa-x4-uart.jpg
+
+[Ported to coreboot 26.09 from CL 86323 patch set 3: hda_verb.c converted
+to the struct azalia_codec table format, verb data unchanged.]
+
+Change-Id: I618b0d2d0b74f759158456a06b37f22afaafe4f8
+Signed-off-by: Alicja Michalska <alicja.michalska@9elements.com>
+---
+ src/mainboard/radxa/Kconfig                   |  17 +
+ src/mainboard/radxa/Kconfig.name              |   4 +
+ src/mainboard/radxa/x4/Kconfig                |  29 ++
+ src/mainboard/radxa/x4/Kconfig.name           |   4 +
+ src/mainboard/radxa/x4/Makefile.mk            |   8 +
+ src/mainboard/radxa/x4/board_info.txt         |   8 +
+ src/mainboard/radxa/x4/bootblock.c            |  17 +
+ src/mainboard/radxa/x4/data.vbt               | Bin 0 -> 8701 bytes
+ src/mainboard/radxa/x4/devicetree.cb          | 102 ++++++
+ src/mainboard/radxa/x4/dsdt.asl               |  25 ++
+ src/mainboard/radxa/x4/gpio.h                 | 310 ++++++++++++++++++
+ src/mainboard/radxa/x4/hda_verb.c             |  53 +++
+ src/mainboard/radxa/x4/memory/Makefile.mk     |   7 +
+ .../radxa/x4/memory/dram_id.generated.txt     |   7 +
+ .../radxa/x4/memory/mem_parts_used.txt        |  12 +
+ src/mainboard/radxa/x4/ramstage.c             |  18 +
+ src/mainboard/radxa/x4/romstage.c             | 106 ++++++
+ src/mainboard/radxa/x4/spd/Makefile.mk        |   6 +
+ 18 files changed, 733 insertions(+)
+ create mode 100644 src/mainboard/radxa/Kconfig
+ create mode 100644 src/mainboard/radxa/Kconfig.name
+ create mode 100644 src/mainboard/radxa/x4/Kconfig
+ create mode 100644 src/mainboard/radxa/x4/Kconfig.name
+ create mode 100644 src/mainboard/radxa/x4/Makefile.mk
+ create mode 100644 src/mainboard/radxa/x4/board_info.txt
+ create mode 100644 src/mainboard/radxa/x4/bootblock.c
+ create mode 100644 src/mainboard/radxa/x4/data.vbt
+ create mode 100644 src/mainboard/radxa/x4/devicetree.cb
+ create mode 100644 src/mainboard/radxa/x4/dsdt.asl
+ create mode 100644 src/mainboard/radxa/x4/gpio.h
+ create mode 100644 src/mainboard/radxa/x4/hda_verb.c
+ create mode 100644 src/mainboard/radxa/x4/memory/Makefile.mk
+ create mode 100644 src/mainboard/radxa/x4/memory/dram_id.generated.txt
+ create mode 100644 src/mainboard/radxa/x4/memory/mem_parts_used.txt
+ create mode 100644 src/mainboard/radxa/x4/ramstage.c
+ create mode 100644 src/mainboard/radxa/x4/romstage.c
+ create mode 100644 src/mainboard/radxa/x4/spd/Makefile.mk
+
+diff --git a/src/mainboard/radxa/Kconfig b/src/mainboard/radxa/Kconfig
+new file mode 100644
+index 00000000..f9b6fa55
+--- /dev/null
++++ b/src/mainboard/radxa/Kconfig
+@@ -0,0 +1,17 @@
++## SPDX-License-Identifier: GPL-2.0-or-later
++
++if VENDOR_RADXA
++
++choice
++	prompt "Mainboard model"
++
++source "src/mainboard/radxa/*/Kconfig.name"
++
++endchoice
++
++source "src/mainboard/radxa/*/Kconfig"
++
++config MAINBOARD_VENDOR
++	default "RADXA"
++
++endif # VENDOR_RADXA
+diff --git a/src/mainboard/radxa/Kconfig.name b/src/mainboard/radxa/Kconfig.name
+new file mode 100644
+index 00000000..22c689ad
+--- /dev/null
++++ b/src/mainboard/radxa/Kconfig.name
+@@ -0,0 +1,4 @@
++## SPDX-License-Identifier: GPL-2.0-or-later
++
++config VENDOR_RADXA
++	bool "Radxa"
+diff --git a/src/mainboard/radxa/x4/Kconfig b/src/mainboard/radxa/x4/Kconfig
+new file mode 100644
+index 00000000..55c3efc9
+--- /dev/null
++++ b/src/mainboard/radxa/x4/Kconfig
+@@ -0,0 +1,29 @@
++## SPDX-License-Identifier: GPL-2.0-or-later
++
++if BOARD_RADXA_X4
++
++config BOARD_SPECIFIC_OPTIONS
++	def_bool y
++	select BOARD_ROMSIZE_KB_16384
++	select FSP_TYPE_IOT
++	select HAVE_ACPI_TABLES
++	select SOC_INTEL_ALDERLAKE_PCH_N
++	select SOC_INTEL_COMMON_BLOCK_HDA_VERB
++	select INTEL_LPSS_UART_FOR_CONSOLE
++	select INTEL_GMA_HAVE_VBT
++	select DRIVERS_INTEL_PMC
++	select DRIVERS_INTEL_ISH
++	select MAINBOARD_HAS_TPM2
++	select HAVE_INTEL_PTT
++	select CRB_TPM
++
++config HAVE_SPD_IN_CBFS
++	default y
++
++config MAINBOARD_DIR
++	default "radxa/x4"
++
++config MAINBOARD_PART_NUMBER
++	default "X4"
++
++endif # BOARD_RADXA_X4
+diff --git a/src/mainboard/radxa/x4/Kconfig.name b/src/mainboard/radxa/x4/Kconfig.name
+new file mode 100644
+index 00000000..57f223d4
+--- /dev/null
++++ b/src/mainboard/radxa/x4/Kconfig.name
+@@ -0,0 +1,4 @@
++## SPDX-License-Identifier: GPL-2.0-or-later
++
++config BOARD_RADXA_X4
++	bool "X4"
+diff --git a/src/mainboard/radxa/x4/Makefile.mk b/src/mainboard/radxa/x4/Makefile.mk
+new file mode 100644
+index 00000000..88ed9594
+--- /dev/null
++++ b/src/mainboard/radxa/x4/Makefile.mk
+@@ -0,0 +1,8 @@
++/* SPDX-License-Identifier: GPL-2.0-or-later */
++
++subdirs-y += memory
++subdirs-$(CONFIG_HAVE_SPD_IN_CBFS) += spd
++
++bootblock-y += bootblock.c
++ramstage-y += ramstage.c
++romstage-y += romstage.c
+diff --git a/src/mainboard/radxa/x4/board_info.txt b/src/mainboard/radxa/x4/board_info.txt
+new file mode 100644
+index 00000000..540b1a6a
+--- /dev/null
++++ b/src/mainboard/radxa/x4/board_info.txt
+@@ -0,0 +1,8 @@
++Vendor name: Radxa
++Board name: X4
++Release year: 2024
++ROM IC: W25Q128JV
++ROM package: WSON-8
++ROM socketed: no
++Flashrom support: yes
++Category: eval
+diff --git a/src/mainboard/radxa/x4/bootblock.c b/src/mainboard/radxa/x4/bootblock.c
+new file mode 100644
+index 00000000..09989206
+--- /dev/null
++++ b/src/mainboard/radxa/x4/bootblock.c
+@@ -0,0 +1,17 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#include <bootblock_common.h>
++#include <soc/gpio.h>
++
++/* Configure GPIOs for LPSS UART in bootblock */
++static const struct pad_config early_gpio_table[] = {
++	/* UART0 RX - TP1 */
++	PAD_CFG_NF(GPP_H10, NONE, DEEP, NF2),
++	/* UART0 TX - TP2 */
++	PAD_CFG_NF(GPP_H11, NONE, DEEP, NF2),
++};
++
++void bootblock_mainboard_early_init(void)
++{
++	 gpio_configure_pads(early_gpio_table, ARRAY_SIZE(early_gpio_table));
++}
+diff --git a/src/mainboard/radxa/x4/data.vbt b/src/mainboard/radxa/x4/data.vbt
+new file mode 100644
+index 0000000000000000000000000000000000000000..e9522d72ef4e03c7763e991414446033695765f4
+GIT binary patch
+literal 8701
+zcmeHMO>7%Q6n?X7Z(L&&mqe`_+Av9~)Co<pcG{3emb(5)sN4M5P8wVZDNbrbqq>co
+zrYIn!EK&|Z2x%oGlvYJpNC?O&oVoZ?hy)T=4+ta<k+@V9+<HN3F>hu!Hk&rYv=o}k
+z&w9J#dEb2d-kaH(+1-QV!7&;b4EM(e1E=~sq7)?sGTdu&;_-e7Mn*;_!hx~CL~w8<
+zbc+5Cd*HjKKW+o02-)ZG%Ca|daW0+l#M|i5%+z!y-4#w>K0h~;rO{A?2F{*MXVSBi
+zbLkWv9e+7M8K2W0yfU3h(cvo>rqZ*06iH-6Q}2<^?jw}?Uh0y&yL__uC|dfwJ$*-y
+zIql*8(8y3UG8h<(j11F}I1NWe1EZt;L&3o_G#Vc{5eY`d`om7UDTL5W_RZPp*U!yS
+zPpFOh@H!owm%B_uGqc%F8pvd5oMA50c=~dB_KkF^(`jc!d9Yas0Fj_J4_LSt1Q%F9
+zK?OWMoCxm`0oxz4ZEB9!6R|3f#I$6hpq9#dp+-OD(GyxSQS|6$5?n4g(B#^vMTZ$1
+zp{!tt0$-nFuww=c*#tBpn+Zl49AT#om~+FoqzT3^g|JHoY&U=v8|FbZU@Rd03XJW2
+z16BthVRarf6O6lwurCZ4Z_8j=6O45PW4o~#24<Mie4EqVw-8_?hyY;%u$w6NHTy<f
+zyRYsQs~sj$&!b*JT|j*o^#jz8P(MTc67?(88>ru-{)GAq>TjsKQb;NA9(Y{G6%_lo
+zP`WFM#f>O-YRORtCvmuoHvi&&9?NNf;>YzXAnAVr{2L)Y;QU0`o<A%WYV1&`xkHxf
+zp3Kq%Qny7_c^qv4s8&}q@JJc(G=m^^n<&_{#-v=?K5kWob)xQmmakQ|SqI)<3Bke7
+zcZdtm*4jf*EdH=d)#&;Gmo3?>w{GlNz?q+w9aKyR+cV^9DR>k6sYk6ZG3fI*IM~dz
+zJws|AC;@1d-Ag?>gS%%z<jX%YSi!;={J3~-9fjNu%Q27@Ig6_)6N~~IvXW!o+E5Y0
+zJdHKD6xUxEh{o3MN*O-ynqQAKv?__^vJXUKOFK9eX|)0$P8?U{sa2n%<jV{a@GXvG
+z+*(N{Uuzm)i9w@0pc#F^GO6*s6}nPM9^UTMa><59MW#kyU?wfvE*^ziQ%MvaznaUg
+zwje`0Yo+&v#+O`2&bnB^c(~S<E5sI?<>=MDB?b|mVP(u@B@A-AvX)#-$?g~*1KbA@
+z2NPp>$T5j|5CM07jKNAPh~jnw<f3%1?2tpOmF|Ov_aic>HNAX1utC1{s22KE_odzr
+zCDBpt3lVBL1K2>?{=R5aAgMxK(&fU<C=(uqi<KOM1JQ}-<i&Jmc=AH}Dfq*JdfZYh
+zzUU>=$u*D?E06D3+$4e^Jcn8mwrPD7WpmP_sBM#Mm-WNL@aq7ABDnEB4N*wJVe%o|
+z5^?#_1;gR8XOpn{2a$Km1eQv&Gm3f~8{z!t=WafQ>rNc$!D&asS%6Q7n-W|s9_LwS
+zQ!n$fU_4^8iL`d%h2!<uiL5iX62Bj8zUkJ19s(`X7k&7cIN|Yw58?b_63^8umvdLm
+z_P;;E?hyUARQJzI<(@H@Brd%-^&NoOw!{A&i`yl>x7y)xRNb#;pqhbd2C5mTW}upZ
+zY6hwq_#ZRS_ld9{UY!C^1r1+SC1IT$Fuv`vZ<qkebpR>?@qh{m#1j2&Ew|mehX9L0
+z+^~diuUqjYnZ!d;@womezMHl#6B)9Ik+B^<%cA5_nQh)mi3@EF7MIDU{mg9ZBmv84
+zYc<&l^8zT6EGWpbYVnzDcZUd!TUW>cXy{8L+VnSyDqio$0s&3RfeaKm8%uuX(Wadd
+zK&{bjtCkjwUH|CFY?d5>oV7rra1|ECX5`eLv6+p<ph#=rh8WsX42`PCw^d&9Xg}y=
+zdCB1;J$fVV#a89K)Q6cbZj8MHdMzC$Kd-%mU%YMju^fLO)uAu^-9OLg-}T?qVEYq|
+CNOLX#
+
+literal 0
+HcmV?d00001
+
+diff --git a/src/mainboard/radxa/x4/devicetree.cb b/src/mainboard/radxa/x4/devicetree.cb
+new file mode 100644
+index 00000000..ad9a5bbf
+--- /dev/null
++++ b/src/mainboard/radxa/x4/devicetree.cb
+@@ -0,0 +1,102 @@
++chip soc/intel/alderlake
++
++	register "sagv" = "SaGv_Enabled"
++	register "tcc_offset" = "10"
++
++	register "pmc_gpe0_dw0" = "GPP_B"
++	register "pmc_gpe0_dw1" = "GPP_D"
++	register "pmc_gpe0_dw2" = "GPP_E"
++
++	device domain 0 on
++		device ref igpu on
++			register "ddi_portA_config" = "1" 	# HDMI
++			register "ddi_portB_config" = "1"	# HDMI
++			register "ddi_ports_config" = "{
++				[DDI_PORT_A] = DDI_ENABLE_HPD | DDI_ENABLE_DDC,
++				[DDI_PORT_B] = DDI_ENABLE_HPD | DDI_ENABLE_DDC
++			}"
++		end
++
++		device ref crashlog on end
++
++		# Enabled in stock, most definitely unnecessary (empty registers)
++		device ref tcss_xhci on end
++
++		# Enabled in stock, most definitely unnecessary
++		device ref ish on end
++
++		# TODO: Proper mapping
++		device ref xhci on
++			register "usb2_ports" = "{
++				[0] = USB2_PORT_MID(OC_SKIP),
++				[1] = USB2_PORT_MID(OC_SKIP),
++				[2] = USB2_PORT_MID(OC_SKIP),
++				[3] = USB2_PORT_MID(OC_SKIP),
++				[4] = USB2_PORT_MID(OC_SKIP),
++				[5] = USB2_PORT_MID(OC_SKIP),
++				[6] = USB2_PORT_MID(OC_SKIP),
++				[7] = USB2_PORT_MID(OC_SKIP),
++			}"
++
++			register "usb3_ports" = "{
++				[0] = USB3_PORT_DEFAULT(OC_SKIP),
++				[1] = USB3_PORT_DEFAULT(OC_SKIP),
++				[2] = USB3_PORT_DEFAULT(OC_SKIP),
++				[3] = USB3_PORT_DEFAULT(OC_SKIP),
++				[4] = USB3_PORT_DEFAULT(OC_SKIP),
++				[5] = USB3_PORT_DEFAULT(OC_SKIP),
++				[6] = USB3_PORT_DEFAULT(OC_SKIP),
++				[7] = USB3_PORT_DEFAULT(OC_SKIP),
++			}"
++		end
++
++		device ref shared_sram on end
++
++		# Untested, hardware provided by vendor doesn't have eMMC
++		device ref emmc on end
++
++		# Realtek RTL8821CE (WiFi)
++		device ref pcie_rp1 on
++			register "pch_pcie_rp[PCH_RP(1)]" = "{
++				.clk_src = 2,
++				.clk_req = 2,
++				.flags = PCIE_RP_BUILT_IN,
++			}"
++		end
++
++		# Intel I226-V (2.5Gb LAN)
++		device ref pcie_rp7 on
++			register "pch_pcie_rp[PCH_RP(7)]" = "{
++				.clk_src = 0,
++				.clk_req = 0,
++				.flags = PCIE_RP_BUILT_IN,
++			}"
++		end
++
++		# NVME (M.2 2230 - Gen3 x4)
++		device ref pcie_rp9 on
++			register "pch_pcie_rp[PCH_RP(9)]" = "{
++				.clk_src = 3,
++				.clk_req = 3,
++			}"
++		end
++
++		# Disabled in stock firmware. Needed to get UART output straight from SoC (no SIO).
++		# Unsure about mapping, enable'em all for now.
++
++		device ref uart0 on
++			register "serial_io_uart_mode" = "{ [PchSerialIoIndexUART0] = PchSerialIoPci, }"
++		end
++
++		# ALC269Q
++		device ref hda on
++			register "pch_hda_audio_link_hda_enable"	= "true"
++			register "pch_hda_idisp_codec_enable"		= "true"
++			register "pch_hda_idisp_link_frequency"		= "HDA_LINKFREQ_96MHZ"
++			register "pch_hda_idisp_link_tmode"		= "HDA_TMODE_8T"
++		end
++
++		device ref smbus on end
++		device ref fast_spi on end
++	end
++end
+diff --git a/src/mainboard/radxa/x4/dsdt.asl b/src/mainboard/radxa/x4/dsdt.asl
+new file mode 100644
+index 00000000..132ed375
+--- /dev/null
++++ b/src/mainboard/radxa/x4/dsdt.asl
+@@ -0,0 +1,25 @@
++/* SPDX-License-Identifier: GPL-2.0-or-later */
++
++#include <acpi/acpi.h>
++
++DefinitionBlock(
++	"dsdt.aml",
++	"DSDT",
++	ACPI_DSDT_REV_2,
++	OEM_ID,
++	ACPI_TABLE_CREATOR,
++	0x20110725
++)
++{
++	#include <acpi/dsdt_top.asl>
++	#include <soc/intel/common/block/acpi/acpi/platform.asl>
++	#include <soc/intel/common/block/acpi/acpi/globalnvs.asl>
++	#include <cpu/intel/common/acpi/cpu.asl>
++
++	Device (\_SB.PCI0) {
++		#include <soc/intel/common/block/acpi/acpi/northbridge.asl>
++		#include <soc/intel/alderlake/acpi/southbridge.asl>
++	}
++
++	#include <southbridge/intel/common/acpi/sleepstates.asl>
++}
+diff --git a/src/mainboard/radxa/x4/gpio.h b/src/mainboard/radxa/x4/gpio.h
+new file mode 100644
+index 00000000..10758a06
+--- /dev/null
++++ b/src/mainboard/radxa/x4/gpio.h
+@@ -0,0 +1,310 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#ifndef CFG_GPIO_H
++#define CFG_GPIO_H
++
++#include <gpio.h>
++
++/* Pad configuration was generated automatically using intelp2m utility */
++static const struct pad_config gpio_table[] = {
++	/* ------- GPIO Group GPP_B ------- */
++	_PAD_CFG_STRUCT(GPP_B0, PAD_FUNC(NF1) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(RX_DISABLE), PAD_IOSSTATE(IGNORE)),	/* CORE_VID0 */
++	_PAD_CFG_STRUCT(GPP_B1, PAD_FUNC(NF1) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(RX_DISABLE), PAD_IOSSTATE(IGNORE)),	/* CORE_VID1 */
++	_PAD_CFG_STRUCT(GPP_B2, PAD_FUNC(NF1) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE) | (1 << 1), PAD_IOSSTATE(IGNORE)),	/* VRALERT# */
++	_PAD_CFG_STRUCT(GPP_B3, PAD_FUNC(NF4) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE) | (1 << 1), PAD_IOSSTATE(IGNORE)),	/* ISH_GP4B */
++	_PAD_CFG_STRUCT(GPP_B4, PAD_FUNC(NF4) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE) | (1 << 1), PAD_IOSSTATE(IGNORE)),	/* ISH_GP5B */
++	_PAD_CFG_STRUCT(GPP_B5, PAD_FUNC(NF1) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE) | (1 << 1), PAD_IOSSTATE(IGNORE)),	/* ISH_I2C0_SDA */
++	_PAD_CFG_STRUCT(GPP_B6, PAD_FUNC(NF1) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE) | (1 << 1), PAD_IOSSTATE(IGNORE)),	/* ISH_I2C0_SCL */
++	_PAD_CFG_STRUCT(GPP_B7, PAD_FUNC(NF1) | PAD_RESET(RSMRST), PAD_IOSSTATE(IGNORE)),	/* ISH_I2C1_SDA */
++	_PAD_CFG_STRUCT(GPP_B8, PAD_FUNC(NF1) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE) | (1 << 1), PAD_IOSSTATE(IGNORE)),	/* ISH_I2C1_SCL */
++	_PAD_CFG_STRUCT(GPP_B9, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_B10, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_B11, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_B12, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), PAD_IOSSTATE(IGNORE)),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_B13, PAD_FUNC(NF1) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), PAD_IOSSTATE(IGNORE)),	/* PLTRST# */
++	_PAD_CFG_STRUCT(GPP_B14, PAD_FUNC(NF4) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(RX_DISABLE), 0),	/* SATA_LED# */
++	_PAD_CFG_STRUCT(GPP_B15, PAD_FUNC(NF5) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(RX_DISABLE) | (1 << 1) | 1, PAD_IOSSTATE(IGNORE)),	/* ISH_GP7 */
++	_PAD_CFG_STRUCT(GPP_B16, PAD_FUNC(NF4) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(RX_DISABLE) | (1 << 1) | 1, PAD_IOSSTATE(IGNORE)),	/* ISH_I2C2_SDA */
++	_PAD_CFG_STRUCT(GPP_B17, PAD_FUNC(NF4) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(RX_DISABLE), PAD_IOSSTATE(IGNORE)),	/* ISH_I2C2_SCL */
++	_PAD_CFG_STRUCT(GPP_B18, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(RX_DISABLE) | 1, 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_B19, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(RX_DISABLE) | 1, 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_B20, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(RX_DISABLE) | 1, 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_B21, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(RX_DISABLE) | 1, 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_B22, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(RX_DISABLE) | 1, 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_B23, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE) | 1, 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_B24, PAD_FUNC(NF1) | PAD_RESET(DEEP) | PAD_BUF(TX_RX_DISABLE), 0),	/* GSPI0_CLK_LOOPBK */
++	_PAD_CFG_STRUCT(GPP_B25, PAD_FUNC(NF1) | PAD_RESET(DEEP) | PAD_BUF(TX_RX_DISABLE), 0),	/* GSPI1_CLK_LOOPBK */
++
++	/* ------- GPIO Group GPP_T ------- */
++	_PAD_CFG_STRUCT(GPP_T0, PAD_FUNC(GPIO) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_T1, PAD_FUNC(GPIO) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_T2, PAD_FUNC(NF2) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), PAD_PULL(DN_20K)),	/* FUSA_DIAGTEST_EN */
++	_PAD_CFG_STRUCT(GPP_T3, PAD_FUNC(NF2) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), PAD_PULL(DN_20K)),	/* FUSA_DIAGTEST_MODE */
++	_PAD_CFG_STRUCT(GPP_T4, PAD_FUNC(GPIO) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_T5, PAD_FUNC(GPIO) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_T6, PAD_FUNC(GPIO) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_T7, PAD_FUNC(GPIO) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_T8, PAD_FUNC(GPIO) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_T9, PAD_FUNC(GPIO) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_T10, PAD_FUNC(GPIO) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_T11, PAD_FUNC(GPIO) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_T12, PAD_FUNC(GPIO) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_T13, PAD_FUNC(GPIO) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_T14, PAD_FUNC(GPIO) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_T15, PAD_FUNC(GPIO) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++
++	/* ------- GPIO Group GPP_A ------- */
++	_PAD_CFG_STRUCT(GPP_A0, PAD_FUNC(GPIO) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), PAD_IOSSTATE(IGNORE)),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_A1, PAD_FUNC(GPIO) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), PAD_IOSSTATE(IGNORE)),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_A2, PAD_FUNC(NF2) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), PAD_IOSSTATE(IGNORE)),	/* SUSWARN#/SUSPWRDNACK */
++	_PAD_CFG_STRUCT(GPP_A3, PAD_FUNC(NF2) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE) | (1 << 1), PAD_PULL(UP_20K) | PAD_IOSSTATE(IGNORE)),	/* SUSACK# */
++	_PAD_CFG_STRUCT(GPP_A4, PAD_FUNC(GPIO) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), PAD_IOSSTATE(IGNORE)),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_A5, PAD_FUNC(GPIO) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_A6, PAD_FUNC(GPIO) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_A7, PAD_FUNC(GPIO) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_A8, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_A9, PAD_FUNC(GPIO) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), PAD_IOSSTATE(IGNORE)),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_A10, PAD_FUNC(GPIO) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), PAD_IOSSTATE(IGNORE)),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_A11, PAD_FUNC(GPIO) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_A12, PAD_FUNC(GPIO) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_A13, PAD_FUNC(GPIO) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(RX_DISABLE) | 1, 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_A14, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), PAD_IOSSTATE(TxDRxE)),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_A15, PAD_FUNC(NF2) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), PAD_IOSSTATE(TxDRxE)),	/* DDSP_HPD4 */
++	_PAD_CFG_STRUCT(GPP_A16, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_A17, PAD_FUNC(NF1) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(RX_DISABLE) | 1, PAD_IOSSTATE(TxDRxE)),	/* n/a */
++	_PAD_CFG_STRUCT(GPP_A18, PAD_FUNC(NF1) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE) | (1 << 1), PAD_IOSSTATE(TxDRxE)),	/* DDSP_HPDB */
++	_PAD_CFG_STRUCT(GPP_A19, PAD_FUNC(NF1) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), PAD_IOSSTATE(TxDRxE)),	/* DDSP_HPD1 */
++	_PAD_CFG_STRUCT(GPP_A20, PAD_FUNC(NF1) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE) | (1 << 1), PAD_IOSSTATE(TxDRxE)),	/* DDSP_HPD2 */
++	_PAD_CFG_STRUCT(GPP_A21, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(RX_DISABLE) | 1, PAD_IOSSTATE(IGNORE)),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_A22, PAD_FUNC(GPIO) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), PAD_IOSSTATE(IGNORE)),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_A23, PAD_FUNC(GPIO) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_ESPI_CLK_LOOPBK, PAD_FUNC(NF1) | PAD_RESET(DEEP) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPP_ESPI_CLK_LOOPBK */
++
++	/* ------- GPIO Group GPP_S ------- */
++	_PAD_CFG_STRUCT(GPP_S0, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_S1, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_S2, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_S3, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_S4, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_S5, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_S6, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_S7, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++
++	/* ------- GPIO Group GPP_I ------- */
++	_PAD_CFG_STRUCT(GPP_I0, PAD_FUNC(GPIO) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_I1, PAD_FUNC(GPIO) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_I2, PAD_FUNC(GPIO) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_I3, PAD_FUNC(GPIO) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_I4, PAD_FUNC(GPIO) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_I5, PAD_FUNC(GPIO) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_I6, PAD_FUNC(GPIO) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_I7, PAD_FUNC(NF1) | PAD_RESET(PLTRST) | PAD_TRIG(OFF), PAD_PULL(UP_20K)),	/* EMMC_CMD */
++	_PAD_CFG_STRUCT(GPP_I8, PAD_FUNC(NF1) | PAD_RESET(PLTRST) | PAD_TRIG(OFF), PAD_PULL(UP_20K)),	/* EMMC_DATA0 */
++	_PAD_CFG_STRUCT(GPP_I9, PAD_FUNC(NF1) | PAD_RESET(PLTRST) | PAD_TRIG(OFF), PAD_PULL(UP_20K)),	/* EMMC_DATA1 */
++	_PAD_CFG_STRUCT(GPP_I10, PAD_FUNC(NF1) | PAD_RESET(PLTRST) | PAD_TRIG(OFF), PAD_PULL(UP_20K)),	/* EMMC_DATA2 */
++	_PAD_CFG_STRUCT(GPP_I11, PAD_FUNC(NF1) | PAD_RESET(PLTRST) | PAD_TRIG(OFF), PAD_PULL(UP_20K)),	/* EMMC_DATA3 */
++	_PAD_CFG_STRUCT(GPP_I12, PAD_FUNC(NF1) | PAD_RESET(PLTRST) | PAD_TRIG(OFF), PAD_PULL(UP_20K)),	/* EMMC_DATA4 */
++	_PAD_CFG_STRUCT(GPP_I13, PAD_FUNC(NF1) | PAD_RESET(PLTRST) | PAD_TRIG(OFF), PAD_PULL(UP_20K)),	/* EMMC_DATA5 */
++	_PAD_CFG_STRUCT(GPP_I14, PAD_FUNC(NF1) | PAD_RESET(PLTRST) | PAD_TRIG(OFF), PAD_PULL(UP_20K)),	/* EMMC_DATA6 */
++	_PAD_CFG_STRUCT(GPP_I15, PAD_FUNC(NF1) | PAD_RESET(PLTRST) | PAD_TRIG(OFF), PAD_PULL(UP_20K)),	/* EMMC_DATA7 */
++	_PAD_CFG_STRUCT(GPP_I16, PAD_FUNC(NF1) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_DISABLE), PAD_PULL(DN_20K)),	/* EMMC_RCLK */
++	_PAD_CFG_STRUCT(GPP_I17, PAD_FUNC(NF1) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(RX_DISABLE), PAD_PULL(DN_20K)),	/* EMMC_CLK */
++	_PAD_CFG_STRUCT(GPP_I18, PAD_FUNC(NF1) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(RX_DISABLE), PAD_PULL(DN_20K)),	/* EMMC_RESET# */
++	_PAD_CFG_STRUCT(GPP_I19, PAD_FUNC(GPIO) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++
++	/* ------- GPIO Group GPP_H ------- */
++	_PAD_CFG_STRUCT(GPP_H0, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE) | 1, 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_H1, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE) | 1, 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_H2, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE) | 1, 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_H3, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_RX_POL(INVERT) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_H4, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_H5, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_H6, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_H7, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_H8, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_H9, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_H12, PAD_FUNC(NF4) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(RX_DISABLE) | (1 << 1) | 1, PAD_IOSSTATE(IGNORE)),	/* ISH_GP6B */
++	_PAD_CFG_STRUCT(GPP_H13, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(RX_DISABLE) | 1, 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_H14, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_H15, PAD_FUNC(NF1) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(RX_DISABLE) | (1 << 1), PAD_IOSSTATE(IGNORE)),	/* DDPB_CTRLCLK */
++	_PAD_CFG_STRUCT(GPP_H16, PAD_FUNC(GPIO) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_H17, PAD_FUNC(NF1) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(RX_DISABLE) | (1 << 1), PAD_IOSSTATE(IGNORE)),	/* DDPB_CTRLDATA */
++	_PAD_CFG_STRUCT(GPP_H18, PAD_FUNC(NF1) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), PAD_IOSSTATE(IGNORE)),	/* PROC_C10_GATE# */
++	_PAD_CFG_STRUCT(GPP_H19, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_H20, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_H21, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_H22, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_H23, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++
++	/* ------- GPIO Group GPP_D ------- */
++	_PAD_CFG_STRUCT(GPP_D0, PAD_FUNC(NF1) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE) | (1 << 1), PAD_IOSSTATE(IGNORE)),	/* ISH_GP0 */
++	_PAD_CFG_STRUCT(GPP_D1, PAD_FUNC(NF1) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(RX_DISABLE) | (1 << 1), PAD_IOSSTATE(IGNORE)),	/* ISH_GP1 */
++	_PAD_CFG_STRUCT(GPP_D2, PAD_FUNC(NF1) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(RX_DISABLE) | (1 << 1), PAD_IOSSTATE(IGNORE)),	/* ISH_GP2 */
++	_PAD_CFG_STRUCT(GPP_D3, PAD_FUNC(NF1) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(RX_DISABLE) | (1 << 1) | 1, PAD_IOSSTATE(IGNORE)),	/* ISH_GP3 */
++	_PAD_CFG_STRUCT(GPP_D4, PAD_FUNC(GPIO) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_D5, PAD_FUNC(NF1) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* SRCCLKREQ0# */
++	_PAD_CFG_STRUCT(GPP_D6, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_D7, PAD_FUNC(NF1) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* SRCCLKREQ2# */
++	_PAD_CFG_STRUCT(GPP_D8, PAD_FUNC(NF1) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* SRCCLKREQ3# */
++	_PAD_CFG_STRUCT(GPP_D9, PAD_FUNC(NF2) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), PAD_PULL(NATIVE) | PAD_IOSSTATE(HIZCRx0)),	/* DDP3_CTRLCLK */
++	_PAD_CFG_STRUCT(GPP_D10, PAD_FUNC(NF2) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE) | (1 << 1), PAD_PULL(NATIVE) | PAD_IOSSTATE(HIZCRx0)),	/* DDP3_CTRLDATA */
++	_PAD_CFG_STRUCT(GPP_D11, PAD_FUNC(GPIO) | PAD_RESET(DEEP) | PAD_IRQ_ROUTE(SCI) | PAD_RX_POL(INVERT) | PAD_BUF(TX_DISABLE) | (1 << 1), PAD_IOSSTATE(HIZCRx0)),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_D12, PAD_FUNC(NF2) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE) | (1 << 1), PAD_PULL(NATIVE) | PAD_IOSSTATE(HIZCRx0)),	/* DDP4_CTRLDATA */
++	_PAD_CFG_STRUCT(GPP_D13, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_RX_POL(INVERT) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_D14, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_RX_POL(INVERT) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_D15, PAD_FUNC(GPIO) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_D16, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE) | 1, 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_D17, PAD_FUNC(NF1) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(RX_DISABLE) | (1 << 1) | 1, PAD_IOSSTATE(HIZCRx1) | PAD_IOSTERM(DISPUPD)),	/* UART1_RXD */
++	_PAD_CFG_STRUCT(GPP_D18, PAD_FUNC(NF1) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(RX_DISABLE) | 1, PAD_IOSTERM(DISPUPD)),	/* UART1_TXD */
++	_PAD_CFG_STRUCT(GPP_D19, PAD_FUNC(GPIO) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_GSPI2_CLK_LOOPBK, PAD_FUNC(NF1) | PAD_RESET(DEEP) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPP_GSPI2_CLK_LOOPBK */
++
++	/* ------- GPIO Group vGPIO ------- */
++	_PAD_CFG_STRUCT(GPP_VGPIO_0, PAD_FUNC(GPIO) | PAD_RESET(DEEP), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_VGPIO_4, PAD_FUNC(GPIO) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_DISABLE) | (1 << 1), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_VGPIO_5, PAD_FUNC(GPIO) | PAD_RESET(DEEP) | (1 << 1) | 1, 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_VGPIO_6, PAD_FUNC(NF1) | PAD_RESET(DEEP) | (1 << 1), 0),	/* GPP_VGPIO_6 */
++	_PAD_CFG_STRUCT(GPP_VGPIO_7, PAD_FUNC(NF1) | PAD_RESET(DEEP), 0),	/* GPP_VGPIO_7 */
++	_PAD_CFG_STRUCT(GPP_VGPIO_8, PAD_FUNC(NF1) | PAD_RESET(DEEP), 0),	/* GPP_VGPIO_8 */
++	_PAD_CFG_STRUCT(GPP_VGPIO_9, PAD_FUNC(NF1) | PAD_RESET(DEEP) | (1 << 1), 0),	/* GPP_VGPIO_9 */
++	_PAD_CFG_STRUCT(GPP_VGPIO_10, PAD_FUNC(NF1) | PAD_RESET(DEEP) | (1 << 1), 0),	/* GPP_VGPIO_10 */
++	_PAD_CFG_STRUCT(GPP_VGPIO_11, PAD_FUNC(NF1) | PAD_RESET(DEEP), 0),	/* GPP_VGPIO_11 */
++	_PAD_CFG_STRUCT(GPP_VGPIO_12, PAD_FUNC(NF1) | PAD_RESET(DEEP), 0),	/* GPP_VGPIO_12 */
++	_PAD_CFG_STRUCT(GPP_VGPIO_13, PAD_FUNC(NF1) | PAD_RESET(DEEP) | (1 << 1), 0),	/* GPP_VGPIO_13 */
++	_PAD_CFG_STRUCT(GPP_VGPIO_18, PAD_FUNC(NF1) | PAD_RESET(DEEP) | (1 << 1), 0),	/* GPP_VGPIO_18 */
++	_PAD_CFG_STRUCT(GPP_VGPIO_19, PAD_FUNC(NF1) | PAD_RESET(DEEP), 0),	/* GPP_VGPIO_19 */
++	_PAD_CFG_STRUCT(GPP_VGPIO_20, PAD_FUNC(NF1) | PAD_RESET(DEEP), 0),	/* GPP_VGPIO_20 */
++	_PAD_CFG_STRUCT(GPP_VGPIO_21, PAD_FUNC(NF1) | PAD_RESET(DEEP) | (1 << 1), 0),	/* GPP_VGPIO_21 */
++	_PAD_CFG_STRUCT(GPP_VGPIO_22, PAD_FUNC(NF1) | PAD_RESET(DEEP) | (1 << 1), 0),	/* GPP_VGPIO_22 */
++	_PAD_CFG_STRUCT(GPP_VGPIO_23, PAD_FUNC(NF1) | PAD_RESET(DEEP), 0),	/* GPP_VGPIO_23 */
++	_PAD_CFG_STRUCT(GPP_VGPIO_24, PAD_FUNC(NF1) | PAD_RESET(DEEP), 0),	/* GPP_VGPIO_24 */
++	_PAD_CFG_STRUCT(GPP_VGPIO_25, PAD_FUNC(NF1) | PAD_RESET(DEEP) | (1 << 1), 0),	/* GPP_VGPIO_25 */
++	_PAD_CFG_STRUCT(GPP_VGPIO_30, PAD_FUNC(NF1) | PAD_RESET(DEEP), 0),	/* GPP_VGPIO_30 */
++	_PAD_CFG_STRUCT(GPP_VGPIO_31, PAD_FUNC(NF1) | PAD_RESET(DEEP), 0),	/* GPP_VGPIO_31 */
++	_PAD_CFG_STRUCT(GPP_VGPIO_32, PAD_FUNC(NF1) | PAD_RESET(DEEP), 0),	/* GPP_VGPIO_32 */
++	_PAD_CFG_STRUCT(GPP_VGPIO_33, PAD_FUNC(NF1) | PAD_RESET(DEEP), 0),	/* GPP_VGPIO_33 */
++	_PAD_CFG_STRUCT(GPP_VGPIO_34, PAD_FUNC(NF1) | PAD_RESET(DEEP), 0),	/* GPP_VGPIO_34 */
++	_PAD_CFG_STRUCT(GPP_VGPIO_35, PAD_FUNC(NF1) | PAD_RESET(DEEP), 0),	/* GPP_VGPIO_35 */
++	_PAD_CFG_STRUCT(GPP_VGPIO_36, PAD_FUNC(NF1) | PAD_RESET(DEEP), 0),	/* GPP_VGPIO_36 */
++	_PAD_CFG_STRUCT(GPP_VGPIO_37, PAD_FUNC(NF1) | PAD_RESET(DEEP), 0),	/* GPP_VGPIO_37 */
++
++
++	/* ------- GPIO Group GPP_GPD ------- */
++	_PAD_CFG_STRUCT(GPD0, PAD_FUNC(NF1) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE) | (1 << 1), 0),	/* BATLOW# */
++	_PAD_CFG_STRUCT(GPD1, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPD2, PAD_FUNC(GPIO) | PAD_RESET(DEEP) | PAD_IRQ_ROUTE(SCI) | PAD_RX_POL(INVERT) | PAD_BUF(TX_DISABLE) | (1 << 1), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPD3, PAD_FUNC(NF1) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE) | (1 << 1), PAD_PULL(UP_20K)),	/* PWRBTN# */
++	_PAD_CFG_STRUCT(GPD4, PAD_FUNC(NF1) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* SLP_S3# */
++	_PAD_CFG_STRUCT(GPD5, PAD_FUNC(NF1) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* SLP_S4# */
++	_PAD_CFG_STRUCT(GPD6, PAD_FUNC(NF1) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* SLP_A# */
++	_PAD_CFG_STRUCT(GPD7, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE) | 1, 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPD8, PAD_FUNC(NF1) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* SUSCLK */
++	_PAD_CFG_STRUCT(GPD9, PAD_FUNC(NF1) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* SLP_WLAN# */
++	_PAD_CFG_STRUCT(GPD10, PAD_FUNC(NF1) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* SLP_S5# */
++	_PAD_CFG_STRUCT(GPD11, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(RX_DISABLE) | 1, 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPD_INPUT3VSEL, PAD_FUNC(NF1) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPD_INPUT3VSEL */
++	_PAD_CFG_STRUCT(GPD_SLP_LANB, PAD_FUNC(NF1) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPD_SLP_LANB */
++	_PAD_CFG_STRUCT(GPD_SLP_SUSB, PAD_FUNC(NF1) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPD_SLP_SUSB */
++	_PAD_CFG_STRUCT(GPD_WAKEB, PAD_FUNC(NF1) | PAD_BUF(TX_RX_DISABLE) | (1 << 1), 0),	/* GPD_WAKEB */
++	_PAD_CFG_STRUCT(GPD_DRAM_RESETB, PAD_FUNC(NF1) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPD_DRAM_RESETB */
++
++	/* ------- GPIO Group GPP_C ------- */
++	_PAD_CFG_STRUCT(GPP_C0, PAD_FUNC(NF1) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE) | (1 << 1), PAD_IOSSTATE(IGNORE)),	/* SMBCLK */
++	_PAD_CFG_STRUCT(GPP_C1, PAD_FUNC(NF1) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE) | (1 << 1), PAD_IOSSTATE(IGNORE)),	/* SMBDATA */
++	_PAD_CFG_STRUCT(GPP_C2, PAD_FUNC(GPIO) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_C3, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_C4, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_C5, PAD_FUNC(GPIO) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_C6, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_C7, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_C8, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(RX_DISABLE) | 1, 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_C9, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(RX_DISABLE) | 1, 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_C10, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_C11, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_C12, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_C13, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_C14, PAD_FUNC(NF1) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), PAD_IOSTERM(DISPUPD)),	/* n/a */
++	_PAD_CFG_STRUCT(GPP_C15, PAD_FUNC(NF1) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE) | (1 << 1), PAD_IOSSTATE(HIZCRx1) | PAD_IOSTERM(DISPUPD)),	/* n/a */
++	_PAD_CFG_STRUCT(GPP_C16, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_C17, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_C18, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_C19, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_C20, PAD_FUNC(GPIO) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_C21, PAD_FUNC(GPIO) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_C22, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_C23, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++
++	/* ------- GPIO Group GPP_F ------- */
++	_PAD_CFG_STRUCT(GPP_F0, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_F1, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_F2, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_F3, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_F4, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_F5, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_F6, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_F7, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_DISABLE) | (1 << 1), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_F8, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_F9, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_F10, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_DISABLE) | (1 << 1) | 1, 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_F11, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_F12, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_F13, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_F14, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_F15, PAD_FUNC(GPIO) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_F16, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_F17, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_F18, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_F19, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_F20, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), PAD_IOSSTATE(IGNORE)),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_F21, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), PAD_IOSSTATE(IGNORE)),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_F22, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), PAD_IOSSTATE(IGNORE)),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_F23, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), PAD_IOSSTATE(IGNORE)),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_F_CLK_LOOPBK, PAD_FUNC(GPIO) | PAD_RESET(DEEP) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++
++	/* ------- GPIO Group GPP_HVCMOS ------- */
++	_PAD_CFG_STRUCT(GPP_L_BKLTEN, PAD_FUNC(NF1) | PAD_RESET(DEEP) | PAD_BUF(TX_RX_DISABLE), 0),	/* n/a */
++	_PAD_CFG_STRUCT(GPP_L_BKLTCTL, PAD_FUNC(NF1) | PAD_RESET(DEEP) | PAD_BUF(TX_RX_DISABLE), 0),	/* n/a */
++	_PAD_CFG_STRUCT(GPP_L_VDDEN, PAD_FUNC(NF1) | PAD_RESET(DEEP) | PAD_BUF(TX_RX_DISABLE), 0),	/* n/a */
++	_PAD_CFG_STRUCT(GPP_SYS_PWROK, PAD_FUNC(NF1) | PAD_RESET(DEEP) | PAD_BUF(TX_RX_DISABLE) | (1 << 1), PAD_IOSSTATE(IGNORE)),	/* n/a */
++	_PAD_CFG_STRUCT(GPP_SYS_RESETB, PAD_FUNC(NF1) | PAD_RESET(DEEP) | PAD_BUF(TX_RX_DISABLE) | (1 << 1), PAD_IOSSTATE(IGNORE)),	/* n/a */
++	_PAD_CFG_STRUCT(GPP_MLK_RSTB, PAD_FUNC(NF1) | PAD_RESET(DEEP) | PAD_BUF(TX_RX_DISABLE), 0),	/* n/a */
++
++	/* ------- GPIO Group GPP_E ------- */
++	_PAD_CFG_STRUCT(GPP_E0, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_RX_POL(INVERT) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_E1, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_E2, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_E3, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE) | 1, 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_E4, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE) | 1, 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_E5, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_E6, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_E7, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_RX_POL(INVERT) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_E8, PAD_FUNC(NF1) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(RX_DISABLE), 0),	/* n/a */
++	_PAD_CFG_STRUCT(GPP_E9, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_E10, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_E11, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_E12, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_E13, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_E14, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(RX_DISABLE) | 1, 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_E15, PAD_FUNC(GPIO) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_E16, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_E17, PAD_FUNC(GPIO) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_E18, PAD_FUNC(GPIO) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), PAD_IOSSTATE(HIZCRx0)),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_E19, PAD_FUNC(NF1) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(RX_DISABLE) | (1 << 1), PAD_IOSSTATE(HIZCRx0)),	/* DDP1_CTRLDATA */
++	_PAD_CFG_STRUCT(GPP_E20, PAD_FUNC(NF1) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(RX_DISABLE) | (1 << 1) | 1, PAD_IOSSTATE(HIZCRx0)),	/* DDP2_CTRLCLK */
++	_PAD_CFG_STRUCT(GPP_E21, PAD_FUNC(NF1) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(RX_DISABLE) | (1 << 1), PAD_IOSSTATE(HIZCRx0)),	/* DDP2_CTRLDATA */
++	_PAD_CFG_STRUCT(GPP_E22, PAD_FUNC(NF1) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(RX_DISABLE), 0),	/* DDPA_CTRLCLK */
++	_PAD_CFG_STRUCT(GPP_E23, PAD_FUNC(NF1) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(RX_DISABLE) | (1 << 1), 0),	/* DDPA_CTRLDATA */
++	_PAD_CFG_STRUCT(GPP_E_CLK_LOOPBK, PAD_FUNC(GPIO) | PAD_RESET(DEEP) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++
++	/* ------- GPIO Group GPP_R ------- */
++	_PAD_CFG_STRUCT(GPP_R0, PAD_FUNC(NF1) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), PAD_IOSSTATE(IGNORE)),	/* HDA_BCLK */
++	_PAD_CFG_STRUCT(GPP_R1, PAD_FUNC(NF1) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), PAD_PULL(NATIVE) | PAD_IOSSTATE(IGNORE)),	/* HDA_SYNC */
++	_PAD_CFG_STRUCT(GPP_R2, PAD_FUNC(NF1) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(RX_DISABLE), PAD_PULL(NATIVE) | PAD_IOSSTATE(IGNORE)),	/* HDA_SDO */
++	_PAD_CFG_STRUCT(GPP_R3, PAD_FUNC(NF1) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), PAD_PULL(NATIVE) | PAD_IOSSTATE(IGNORE)),	/* HDA_SDI0 */
++	_PAD_CFG_STRUCT(GPP_R4, PAD_FUNC(NF1) | PAD_RESET(DEEP) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), PAD_IOSSTATE(IGNORE)),	/* HDA_RST# */
++	_PAD_CFG_STRUCT(GPP_R5, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_R6, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++	_PAD_CFG_STRUCT(GPP_R7, PAD_FUNC(GPIO) | PAD_RESET(PLTRST) | PAD_TRIG(OFF) | PAD_BUF(TX_RX_DISABLE), 0),	/* GPIO */
++};
++
++#endif /* CFG_GPIO_H */
+diff --git a/src/mainboard/radxa/x4/hda_verb.c b/src/mainboard/radxa/x4/hda_verb.c
+new file mode 100644
+index 00000000..645c0ee5
+--- /dev/null
++++ b/src/mainboard/radxa/x4/hda_verb.c
+@@ -0,0 +1,53 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#include <device/azalia_device.h>
++
++static const u32 realtek_alc269_verbs[] = {
++	AZALIA_SUBVENDOR(0, 0x10ec0269),
++	AZALIA_PIN_CFG(0, 0x12, 0x40000000),
++	AZALIA_PIN_CFG(0, 0x14, 0x411111f0),
++	AZALIA_PIN_CFG(0, 0x15, 0x04214010),
++	AZALIA_PIN_CFG(0, 0x17, 0x411111f0),
++	AZALIA_PIN_CFG(0, 0x18, 0x04a19120),
++	AZALIA_PIN_CFG(0, 0x19, 0x411111f0),
++	AZALIA_PIN_CFG(0, 0x1a, 0x411111f0),
++	AZALIA_PIN_CFG(0, 0x1b, 0x411111f0),
++	AZALIA_PIN_CFG(0, 0x1d, 0x40430505),
++	AZALIA_PIN_CFG(0, 0x1e, 0x411111f0),
++};
++
++static const u32 intel_display_audio_verbs[] = {
++	AZALIA_SUBVENDOR(2, 0x80860101),
++	AZALIA_PIN_CFG(2, 0x04, 0x18560010),
++	AZALIA_PIN_CFG(2, 0x06, 0x18560010),
++	AZALIA_PIN_CFG(2, 0x08, 0x18560010),
++	AZALIA_PIN_CFG(2, 0x0a, 0x18560010),
++	AZALIA_PIN_CFG(2, 0x0b, 0x18560010),
++	AZALIA_PIN_CFG(2, 0x0c, 0x18560010),
++	AZALIA_PIN_CFG(2, 0x0d, 0x18560010),
++	AZALIA_PIN_CFG(2, 0x0e, 0x18560010),
++	AZALIA_PIN_CFG(2, 0x0f, 0x18560010),
++};
++
++const u32 pc_beep_verbs[] = {};
++
++static struct azalia_codec mainboard_azalia_codecs[] = {
++	{
++		.name         = "Realtek ALC269VC",
++		.vendor_id    = 0x10ec0269,
++		.subsystem_id = 0x10ec0269,
++		.address      = 0,
++		.verbs        = realtek_alc269_verbs,
++		.verb_count   = ARRAY_SIZE(realtek_alc269_verbs),
++	},
++	{
++		.name         = "AlderLake-P HDMI",
++		.vendor_id    = 0x8086281c,
++		.subsystem_id = 0x80860101,
++		.address      = 2,
++		.verbs        = intel_display_audio_verbs,
++		.verb_count   = ARRAY_SIZE(intel_display_audio_verbs),
++	},
++};
++
++AZALIA_ARRAY_SIZES;
+diff --git a/src/mainboard/radxa/x4/memory/Makefile.mk b/src/mainboard/radxa/x4/memory/Makefile.mk
+new file mode 100644
+index 00000000..0d88d5b5
+--- /dev/null
++++ b/src/mainboard/radxa/x4/memory/Makefile.mk
+@@ -0,0 +1,7 @@
++# SPDX-License-Identifier: GPL-2.0-or-later
++# This is an auto-generated file. Do not edit!!
++# Generated by:
++# ./util/spd_tools/bin/part_id_gen ADL lp5 src/mainboard/radxa/x4/memory/ src/mainboard/radxa/x4/memory/mem_parts_used.txt
++
++SPD_SOURCES =
++SPD_SOURCES += spd/lp5/set-0/spd-3.hex      # ID = 0(0b0000)  Parts = H58G56AK6BX069
+diff --git a/src/mainboard/radxa/x4/memory/dram_id.generated.txt b/src/mainboard/radxa/x4/memory/dram_id.generated.txt
+new file mode 100644
+index 00000000..be3d6a92
+--- /dev/null
++++ b/src/mainboard/radxa/x4/memory/dram_id.generated.txt
+@@ -0,0 +1,7 @@
++# SPDX-License-Identifier: GPL-2.0-or-later
++# This is an auto-generated file. Do not edit!!
++# Generated by:
++# ./util/spd_tools/bin/part_id_gen ADL lp5 src/mainboard/radxa/x4/memory/ src/mainboard/radxa/x4/memory/mem_parts_used.txt
++
++DRAM Part Name                 ID to assign
++H58G56AK6BX069                 0 (0000)
+diff --git a/src/mainboard/radxa/x4/memory/mem_parts_used.txt b/src/mainboard/radxa/x4/memory/mem_parts_used.txt
+new file mode 100644
+index 00000000..93a0c160
+--- /dev/null
++++ b/src/mainboard/radxa/x4/memory/mem_parts_used.txt
+@@ -0,0 +1,12 @@
++# This is a CSV file containing a list of memory parts used by this board.
++# One part per line with an optional fixed ID in column 2.
++# Only include a fixed ID if it is required for legacy reasons!
++# Generated IDs are dependent on the order of parts in this file,
++# so new parts must always be added at the end of the file!
++#
++# Generate an updated Makefile.mk and dram_id.generated.txt by running the
++# part_id_gen tool from util/spd_tools.
++# See util/spd_tools/README.md for more details and instructions.
++
++# Part Name
++H58G56AK6BX069
+diff --git a/src/mainboard/radxa/x4/ramstage.c b/src/mainboard/radxa/x4/ramstage.c
+new file mode 100644
+index 00000000..ea4c9ec3
+--- /dev/null
++++ b/src/mainboard/radxa/x4/ramstage.c
+@@ -0,0 +1,18 @@
++/* SPDX-License-Identifier: GPL-2.0-or-later */
++
++#include <soc/ramstage.h>
++#include "gpio.h"
++
++static void mainboard_init(void *chip_info)
++{
++	gpio_configure_pads(gpio_table, ARRAY_SIZE(gpio_table));
++}
++
++struct chip_operations mainboard_ops = {
++	.init = mainboard_init,
++};
++
++void mainboard_silicon_init_params(FSP_S_CONFIG *params)
++{
++
++}
+diff --git a/src/mainboard/radxa/x4/romstage.c b/src/mainboard/radxa/x4/romstage.c
+new file mode 100644
+index 00000000..d52fa4fc
+--- /dev/null
++++ b/src/mainboard/radxa/x4/romstage.c
+@@ -0,0 +1,106 @@
++/* SPDX-License-Identifier: GPL-2.0-or-later */
++
++#include <spd_bin.h>
++#include <fsp/api.h>
++#include <soc/meminit.h>
++#include <soc/romstage.h>
++#include <gpio.h>
++
++static const struct mb_cfg lp5_mem_config = {
++	.type = MEM_TYPE_LP5X,
++
++	//	TODO: DQ and DQS map should be correct.
++	//	something's still not right though:
++	//	[SPEW ]  Calling FspMemoryInit: 0xffc6f220
++	//	[SPEW ]         0xfef87308: raminit_upd
++	//	[SPEW ]         0xfef944d0: &hob_list_ptr
++	//	[EMERG]  FspMemoryInit error, status=0x80000007
++
++	/* DQ CPU<>DRAM map */
++	.lpx_dq_map = {
++		.ddr0 = {
++			.dq0 = { 12,  9, 10, 11, 14, 13,  8, 15 },
++			.dq1 = {  3,  1,  2,  0,  4,  7,  5,  6 },
++		},
++		.ddr1 = {
++			.dq0 = {  3,  1,  2,  0,  4,  7,  5,  6 },
++			.dq1 = { 13,  9,  8, 11, 10, 14, 15, 12 },
++		},
++		.ddr2 = {
++			.dq0 = {  2,  6,  0,  3,  5, 1,  4,  7 }, 
++			.dq1 = {  11,  12, 9, 15, 10, 8, 14, 13 },
++		},
++		.ddr3 = {
++			.dq0 = {  0,  1,  5,  4,  3,  2,  7,  6 },
++			.dq1 = { 14,  9, 8,  13, 15, 12, 11, 10 },
++		},
++		.ddr4 = {
++			.dq0 = { 12,  9, 10, 11, 14, 13,  8, 15 },
++			.dq1 = {  3,  1,  2,  0,  4,  7,  5,  6 },
++		},
++		.ddr5 = {
++			.dq0 = {  3,  1,  2,  0,  4,  7,  5,  6 },
++			.dq1 = { 13,  9,  8, 11, 10, 14, 15, 12 },
++		},
++		.ddr6 = {
++			.dq0 = {  2,  6,  0,  3,  5, 1,  4,  7 },	
++			.dq1 = {  11,  12, 9, 15, 10, 8, 14, 13 },
++		},
++		.ddr7 = {
++			.dq0 = {  0,  1,  5,  4,  3,  2,  7,  6 },
++			.dq1 = { 14,  9, 8,  13, 15, 12, 11, 10 },
++		},
++	},
++	
++	/* DQS CPU<>DRAM map */
++	.lpx_dqs_map = {
++		.ddr0 = { .dqs0 = 0, .dqs1 = 1 },
++		.ddr1 = { .dqs0 = 0, .dqs1 = 1 },
++		.ddr2 = { .dqs0 = 0, .dqs1 = 1 },
++		.ddr3 = { .dqs0 = 0, .dqs1 = 1 },
++		.ddr4 = { .dqs0 = 0, .dqs1 = 1 },
++		.ddr5 = { .dqs0 = 0, .dqs1 = 1 },
++		.ddr6 = { .dqs0 = 0, .dqs1 = 1 },
++		.ddr7 = { .dqs0 = 0, .dqs1 = 1 }
++	},
++
++	/* Board uses 100ohm rcomp resistor */
++	.rcomp = {
++		.resistor = 100,
++	},
++
++	.lp5x_config = {
++		.ccc_config = 0x00,
++	},
++
++	.ect = true, /* Early Command Training */
++	.UserBd = BOARD_TYPE_ULT_ULX,
++	.LpDdrDqDqsReTraining = 1,
++};
++
++static size_t get_spd_index(void)
++{
++	/* Following straps are used to configure memory:
++	 * GPP_E10:GPP_E11:
++	 * 0:0 == 4GB
++	 * 0:1 == 8GB
++	 * 1:0 == 16GB
++	 * 1:1 == 32GB */
++	gpio_t spd_gpios[] = {
++		GPP_E10,
++		GPP_E11,
++	};
++
++	return gpio_base2_value(spd_gpios, ARRAY_SIZE(spd_gpios));
++};
++
++void mainboard_memory_init_params(FSPM_UPD *memupd)
++{
++	const bool half_populated = true;
++	const struct mem_spd memory_down_spd_info = {
++		.topo = MEM_TOPO_MEMORY_DOWN,
++		.cbfs_index = get_spd_index(),
++	};
++
++	memcfg_init(memupd, &lp5_mem_config, &memory_down_spd_info, half_populated);
++}
+diff --git a/src/mainboard/radxa/x4/spd/Makefile.mk b/src/mainboard/radxa/x4/spd/Makefile.mk
+new file mode 100644
+index 00000000..be4d98bd
+--- /dev/null
++++ b/src/mainboard/radxa/x4/spd/Makefile.mk
+@@ -0,0 +1,6 @@
++## SPDX-License-Identifier: GPL-2.0-or-later
++##
++
++ifneq ($(SPD_SOURCES),)
++LIB_SPD_DEPS := $(SPD_SOURCES)
++endif

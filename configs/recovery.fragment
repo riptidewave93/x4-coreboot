@@ -1,0 +1,6 @@
+# Added for the recovery block (scripts/build.sh): a bootblock that only serves UART flash mode
+CONFIG_CONSOLE_SERIAL=y
+CONFIG_RADXA_X4_RECOVERY=y
+CONFIG_PAYLOAD_NONE=y
+# The log level is built into the block: keep it fixed when the production level changes
+CONFIG_DEFAULT_CONSOLE_LOGLEVEL_7=y
