@@ -2,6 +2,8 @@
 
 Flash `bios-region.bin` with Intel's `Fpt.efi`. It holds only the BIOS region, so the descriptor and ME stay stock. **Never write `coreboot.rom` with Fpt.**
 
+Get a build from [Releases](../../releases) as `x4-coreboot-<version>.zip`, or make your own (README, "Build"). Below, `<build>` is the zip's `EFI/` folder or your build's folder in `output/`.
+
 | If a build doesn't boot | Fix it with |
 |---|---|
 | A debug build whose bootblock runs | [UART flash mode](#uart-flash-mode) |
@@ -10,13 +12,9 @@ Flash `bios-region.bin` with Intel's `Fpt.efi`. It holds only the BIOS region, s
 
 ## Flash with Fpt
 
-Copy these files to a FAT32 USB stick. Radxa's files come from its [V007 zip](https://dl.radxa.com/x/x4/Radxa_X4_BIOS_V007.zip); don't copy the zip's `.nsh` scripts. Check the build first with `sha256sum -c SHA256SUMS`.
-
-| File | From | To |
-|---|---|---|
-| `EFI/BOOT/BOOTX64.efi` (the EFI shell) | the V007 zip | `EFI/BOOT/` |
-| `EFI/Fpt.efi` | the V007 zip | `EFI/` |
-| `bios-region.bin`, `backup.nsh`, `install.nsh` | the build | `EFI/` |
+Set up a FAT32 USB stick:
+- **The build:** extract the release zip to the stick's root, which puts its files in `EFI/`. For your own build, copy its folder's files to `EFI/`. Check them in `EFI/` with `sha256sum -c SHA256SUMS`.
+- **Radxa's files,** from its [V007 zip](https://dl.radxa.com/x/x4/Radxa_X4_BIOS_V007.zip): `EFI/BOOT/BOOTX64.efi` (the EFI shell) to `EFI/BOOT/`, and `EFI/Fpt.efi` to `EFI/`. Don't copy the zip's `.nsh` scripts.
 
 1. Boot the stick. From the stock BIOS: turn Secure Boot off in setup (Del), then pick the stick with F7. From coreboot: press F2 and use the boot manager.
 2. In the EFI shell run `fs0:`, `cd EFI`, then `backup.nsh` before the first install, then `install.nsh`. If the stick isn't `fs0:`, `map` lists the disks. Don't cut power until the script prints "Done".
@@ -34,7 +32,7 @@ A debug build's bootblock can reflash the rest of coreboot over UART, before any
 
 With the board off, run this, then power on:
 ```sh
-python3 scripts/x4_uart_flash.py output/<build>/coreboot.rom --log boot.log
+python3 scripts/x4_uart_flash.py <build>/coreboot.rom --log boot.log
 ```
 If it stops with an error, don't power off: run it again. For an adapter other than the Debug Probe, add `--port /dev/serial/by-id/<adapter>`.
 
@@ -45,14 +43,14 @@ The new build's bootblock must match the board's, or the tool refuses. Build it 
 Every build carries a recovery bootblock that only runs UART flash mode. It can rewrite everything except the descriptor, the ME and itself, so it fixes production builds and broken bootblocks.
 
 **Enter it** in one of two ways:
-- **From a debug build:** run `python3 scripts/x4_uart_flash.py output/<build>/coreboot.rom --enter-recovery`, then power on.
+- **From a debug build:** run `python3 scripts/x4_uart_flash.py <build>/coreboot.rom --enter-recovery`, then power on.
 - **From any build:** with the power unplugged, fit a 4.7 kΩ resistor on **R179**, on the bottom side between R138 and R194. Not R187 above it, and never a solder bridge. This way is untested with this recovery block.
 
 ![R179 on the bottom of the X4 v1.11](radxa-x4-r179-location.png)
 
 **Flash and leave:**
 ```sh
-python3 scripts/x4_uart_flash.py output/<build>/coreboot.rom --write-protected --leave-recovery --log boot.log
+python3 scripts/x4_uart_flash.py <build>/coreboot.rom --write-protected --leave-recovery --log boot.log
 ```
 If a run stops part way, run it again: the board stays in recovery until a run completes. With R179 fitted, unplug the power and remove it afterwards. `--help` lists the other options.
 

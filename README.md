@@ -45,7 +45,7 @@ Each build lands in `output/<date>-radxa-x4/` (or `…-debug/`) with `bios-regio
 
 ## Flash
 
-Follow [`FLASHING.md`](FLASHING.md).
+Download a build from [Releases](../../releases) or make your own, then follow [`FLASHING.md`](FLASHING.md).
 
 ## Setup
 
