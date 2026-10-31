@@ -1,14 +1,12 @@
 # Lint and build with the same make targets as local development, on pull requests and
-# on main. Debug builds are opt-in: the debug-build label on a pull request, or a manual
-# run with the debug build type. On main, Release-Please keeps a release PR open. Merging
-# it tags a draft release; this workflow builds the tagged commit with the release
-# version, attaches the production build and publishes the release.
+# on main. Debug builds are opt-in: a manual run with the debug build type. On main,
+# Release-Please keeps a release PR open. Merging it tags a draft release; this workflow
+# builds the tagged commit with the release version, attaches the production build and
+# publishes the release.
 name: CI
 
 on:
   pull_request:
-    # closed cancels the build of a merged or closed pull request
-    types: [opened, synchronize, reopened, closed, labeled]
   push:
     branches: [main]
   workflow_dispatch:
@@ -22,17 +20,14 @@ on:
 permissions:
   contents: read
 
-# A pull request's newest event cancels its running build. Pull requests group by number,
-# not github.ref: a merged PR's closed event has the base branch as its ref. Pushes to
-# main are never cancelled, and manual runs and labels other than debug-build get their
-# own group, so neither can displace a queued main run.
+# A new push to a pull request cancels its running build. Pushes to main queue and are
+# never cancelled; manual runs get their own group.
 concurrency:
-  group: ${{ github.event_name == 'pull_request' && format('ci-pr-{0}', github.event.pull_request.number) || github.event_name == 'push' && format('ci-{0}', github.ref) || format('ci-manual-{0}', github.run_id) }}${{ github.event.action == 'labeled' && github.event.label.name != 'debug-build' && format('-{0}', github.run_id) || '' }}
+  group: ci-${{ github.event.pull_request.number || github.event_name == 'push' && github.ref || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   lint:
-    if: github.event.action != 'closed' && (github.event.action != 'labeled' || github.event.label.name == 'debug-build')
     runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v7
@@ -59,10 +54,7 @@ jobs:
   build:
     needs: release-please
     # Also runs when release-please is skipped (pull requests, manual runs)
-    if: >-
-      !cancelled() && needs.release-please.result != 'failure' &&
-      github.event.action != 'closed' &&
-      (github.event.action != 'labeled' || github.event.label.name == 'debug-build')
+    if: ${{ !cancelled() && needs.release-please.result != 'failure' }}
     runs-on: ubuntu-26.04
     # The first run builds the toolchain; later runs restore it from the cache
     timeout-minutes: 240
@@ -70,7 +62,7 @@ jobs:
       # Empty except for a release: then the coreboot version carries it
       RELEASE: ${{ needs.release-please.outputs.created && needs.release-please.outputs.version || '' }}
       PRODUCTION: ${{ github.event_name != 'workflow_dispatch' || inputs.build != 'debug' }}
-      DEBUG: ${{ (github.event_name == 'workflow_dispatch' && inputs.build == 'debug') || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'debug-build')) }}
+      DEBUG: ${{ github.event_name == 'workflow_dispatch' && inputs.build == 'debug' }}
     steps:
       # A release builds the commit Release-Please tagged, even if main has moved on
       - uses: actions/checkout@v7
