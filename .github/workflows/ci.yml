@@ -133,13 +133,15 @@ jobs:
           name: radxa-x4
           path: radxa-x4
 
-      - name: Attach the builds and publish the release
+      # One zip with the files under EFI/, ready to extract onto a USB stick (FLASHING.md)
+      - name: Attach the build and publish the release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.release-please.outputs.tag }}
         run: |
-          cd radxa-x4
-          mapfile -t files < <(awk '{print $2}' SHA256SUMS)
-          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" \
-            "${files[@]}" SHA256SUMS versions.txt
+          mkdir -p zip/EFI
+          mapfile -t files < <(awk '{print $2}' radxa-x4/SHA256SUMS)
+          (cd radxa-x4 && cp "${files[@]}" SHA256SUMS versions.txt ../zip/EFI/)
+          (cd zip && zip -qr "../x4-coreboot-$TAG.zip" EFI)
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" "x4-coreboot-$TAG.zip"
           gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest
