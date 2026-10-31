@@ -22,10 +22,12 @@ on:
 permissions:
   contents: read
 
-# A pull request's newest event cancels its running build. Runs on main are never
-# cancelled. Labels other than debug-build get their own group, so they cancel nothing.
+# A pull request's newest event cancels its running build. Pull requests group by number,
+# not github.ref: a merged PR's closed event has the base branch as its ref. Pushes to
+# main are never cancelled, and manual runs and labels other than debug-build get their
+# own group, so neither can displace a queued main run.
 concurrency:
-  group: ci-${{ github.ref }}${{ github.event.action == 'labeled' && github.event.label.name != 'debug-build' && format('-{0}', github.run_id) || '' }}
+  group: ${{ github.event_name == 'pull_request' && format('ci-pr-{0}', github.event.pull_request.number) || github.event_name == 'push' && format('ci-{0}', github.ref) || format('ci-manual-{0}', github.run_id) }}${{ github.event.action == 'labeled' && github.event.label.name != 'debug-build' && format('-{0}', github.run_id) || '' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
